@@ -1,0 +1,213 @@
+Sub StartProcessing()
+
+Dim SelectedPath As String
+
+'Locates local data.csv file for processing and start processing data.csv file
+
+ With Application.FileDialog(msoFileDialogFilePicker)
+            .AllowMultiSelect = False
+            .Filters.Clear
+            .Filters.Add "Comma Separated Value", "*.csv"
+            .ButtonName = "Process selected data.csv"
+            .Title = "Locate data.csv file please"
+            .Show
+            If .SelectedItems.Count > 0 Then
+                SelectedPath = .SelectedItems(1)
+                ProcessCSV (SelectedPath)
+            End If
+        End With
+
+End Sub
+
+Sub ProcessCSV(sFile As String)
+
+
+'-------1. INITIALIZATION------------------
+
+'Defines arrays necessary for processing
+
+Dim WrdArray() As String        ' for separation of CSV columns
+Dim TwoDArray() As Variant      ' for 2D array of data only from CSV file
+Dim Headers() As Variant        ' for headers of CSV file
+Dim sLine() As String           ' for reading csv file line by line
+Dim PriceValue() As Variant     ' for operations with price data only as 1D array
+
+'Defines variables for counting and cycles
+
+Dim ColumnCount, lCount, i, Column, aCount As Long 'for conting columns in file, line Count (lCount), data line count(aCount) and cycles i
+
+
+ReDim TwoDArray(1, 0) ' defines a 2D dimention
+aCount = 0 ' nulls the data line count from CSV
+
+
+'-------2. READING CSV FROM INDICATED PATH--
+
+Open sFile For Input As #1
+
+
+'Read csv file line by line
+
+    Do
+        lCount = lCount + 1
+        ReDim Preserve sLine(lCount)
+        Line Input #1, sLine(lCount)
+
+        WrdArray() = Split(sLine(lCount), ",") ' splits each line ready from CSV by comma into 1D array
+
+
+
+
+' First read the headers of the CSV file into Headers() 1D array
+
+            If lCount = 1 Then
+   
+                 ColumnCount = UBound(WrdArray) 'record number of columns within the CSV
+   
+                    For Column = 0 To ColumnCount
+                        ReDim Preserve Headers(Column)
+                        Headers(Column) = WrdArray(Column) ' populate Headers file
+                     Next
+
+            End If
+
+
+
+' Then read the factual data from csv into 2D array
+
+            If lCount > 1 Then
+
+                ReDim Preserve TwoDArray(1, aCount) 'allows increasing only the last dimention of the 2D array
+
+                    For Column = 0 To UBound(WrdArray)
+        
+                        If Column = 0 Then
+                            TwoDArray(Column, aCount) = WrdArray(Column) ' record Timestamp in String format as it is in the original file (first column)
+                        Else
+                            TwoDArray(Column, aCount) = Val(WrdArray(Column)) 'transform Price value from String into Numbers(second column)
+                        End If
+        
+                    Next
+
+            aCount = aCount + 1 'record number of rows in the 2D array starting with 0
+
+            End If
+
+
+    Loop Until EOF(1)
+    
+Close #1
+
+
+
+'-------3. INTERPOLATE N/A ELEMENTS IN PRICE SERIES--
+
+For i = 1 To aCount - 1
+
+    If TwoDArray(1, i) = 0 And i > 1 Then 'each N/A element in price data was transformed into "0" by Val function hence check for 0 value
+    
+        TwoDArray(1, i) = (TwoDArray(1, i - 1) + TwoDArray(1, i + 1)) / 2 ' interpolate as simple average of the 2 nearby price data points
+    
+    End If
+    
+Next i
+
+
+
+'-------4. PREAPRE NEW WORKBOOK TO WRITE INTO--
+
+Set NewBook = Workbooks.Add
+
+    With NewBook
+        .Title = "Optiver: Another VBA Run"
+        .Subject = "VBA Run result"
+        
+        'make sure there are least 2 sheets available to write into depending on default Excel settings
+        
+             If .Sheets.Count < 3 Then
+                 Do
+                    .Sheets.Add
+                 Loop Until .Sheets.Count = 6
+             End If
+        
+         'name sheets accordingly
+         
+        .Sheets(3).Name = "Average"
+        .Sheets(2).Name = "Data"
+        .Sheets(1).Name = "Plot"
+  
+  
+    End With
+
+
+
+
+'-------5. CREATE THE PLOT SHEET--
+
+Set ds = Sheets("Plot")
+
+
+   With ds
+   
+     .Shapes.AddChart(200, 10, 10, 450, 300).Select
+
+
+          With ActiveChart
+             .ChartType = xlLine
+             .Parent.Name = "MyChart"
+             .HasTitle = True
+             .ChartTitle.Text = "Price"
+          End With
+          
+   
+          With .ChartObjects("MyChart").Chart
+             .SeriesCollection.NewSeries
+             .SeriesCollection(1).XValues = Application.Index(TwoDArray, 1, 0)
+             .SeriesCollection(1).Values = Application.Index(TwoDArray, 2, 0)
+             .ChartTitle.Text = Headers(UBound(Headers))
+             .Legend.Select
+              Selection.Delete
+        End With
+   
+   
+   End With
+   
+   
+
+
+'-------6. CREATE THE DATA SHEET--
+
+Set ds = Sheets("Data")
+
+  With ds
+
+    .Range("A1:B" + Format(aCount + 1)) = Headers  'write headers for a start
+    .Range("B1") = .Range("B1") + "^2" ' add the power of 2 sign to the price column
+    .Range("A2:A" + Format(aCount + 1)) = Application.Transpose(Application.Index(TwoDArray, 1, 0)) ' slice the Timestamp part of 2d array
+                                                                                      
+     PriceValue = (Application.Index(TwoDArray, 2, 0)) 'read the price values only by slicing, using Index function
+
+    .Range("B2:B" + Format(aCount + 1)) = (Application.Power(Application.Transpose(PriceValue), 2))
+                                                      'transpose into columns and raise to the power of 2, write to column B
+                                                      
+  End With
+
+
+'-------6. CREATE THE AVERAGE SHEET--
+
+PriceValue = (Application.Index(TwoDArray, 2, 0)) ' read all the price data again as 1D array by slicing original 2D data
+
+Set ds = Sheets("Average")
+
+
+    With ds
+
+       .Range("B1") = Application.Average(PriceValue) ' use Average function to calculate average of the data
+       .Range("A1") = "Average="
+
+    End With
+
+
+End Sub
+
+
