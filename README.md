@@ -1,7 +1,7 @@
 VBAFinancialAnalysis
 ====================
 
-Excel VBA code to clean, represent financial timeseries in a plot, list and anaklysis output:
+Excel VBA code to clean, represent financial timeseries in a plot, list and analysis output:
 
 1. This script prompts VBA to locate data.csv file which is stored locally and contains two rows of data: 
 
